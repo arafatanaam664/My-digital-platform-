@@ -32,9 +32,13 @@ export function verifySessionToken(token: string): number | null {
 }
 
 export function setSessionCookie(token: string) {
+  // SameSite=None+Secure so the session cookie survives when the site is
+  // embedded in a cross-origin frame (e.g. preview iframes); lax for local dev.
+  const isProd = process.env.NODE_ENV === 'production';
   cookies().set(COOKIE, token, {
     httpOnly: true,
-    sameSite: 'lax',
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
     path: '/',
     maxAge: 7 * 86400,
   });
