@@ -25,13 +25,18 @@
 |---|---|---|
 | الواجهة + الـ API | **Next.js 14** (App Router, Server Components) | سرعة + SEO قوي (SSR, sitemap, metadata) + Actions |
 | اللغة | **TypeScript** (strict) | أمان الأنواع في كل الطبقات |
-| الـ ORM / قاعدة البيانات | طبقة بيانات مخصصة فوق **SQLite** (`node:sqlite` مدمج) | صفر إعدادات، ملف واحد، قابلة للاستبدال بـ Prisma/Postgres لاحقاً |
+| الـ ORM / قاعدة البيانات | طبقة بيانات مخصصة تعمل على **Postgres** (Supabase/Neon) أو **SQLite** محلياً | نفس الكود في الحالتين — تتبدّل قاعدة البيانات بمتغير بيئة واحد فقط |
+| الصور/الوسائط | **Cloudflare R2** (مباشر عبر API) | 10GB مجاناً + **صفر رسوم تحويل بيانات** (egress) |
 | الواجهة | **Tailwind CSS** + RTL كامل | تصميم عربي نظيف ومتجاوب |
 | الرسوم البيانية | **Recharts** | مخططات الإحصائيات |
 | المصادقة | Session عبر Cookie موقّع (HMAC) + bcryptjs | دخول آمن للوحة التحكم |
 | التحليلات | **مدمج** (beacon → `/api/analytics`) + دعم GA4 وAdSense | تتبّع يومي/أسبوعي/شهري/سنوي + زيارات **كل صفحة ومقال على حدة** |
 
-> 💡 ملاحظة عن قاعدة البيانات: البيئة الحالية تمنع تحميل محرك Prisma الخارجي، لذلك كُتبت طبقة بيانات خفيفة فوق SQLite المدمج في Node بنفس واجهة Prisma (`prisma.<model>.<method>`) — **للاستبدال بـ Prisma/Postgres لاحقاً لا تغيّر سوى ملف `src/lib/db.ts`**، فكل استدعاءات بقية الكود تستخدم نفس النمط.
+> 💡 **قاعدة البيانات (دوّية):** كُتبت طبقة بيانات خفيفة بنفس واجهة Prisma (`prisma.<model>.<method>`) تعمل على محركين:
+> - **محلياً (التطوير):** SQLite مدمج في Node (`node:sqlite`) — صفر إعدادات، ملف `prisma/dev.db`.
+> - **إنتاجاً (Supabase/Neon):** Postgres عبر مكتبة `pg` — DDL جاهزة في `prisma/postgres-schema.sql` وتُنشئ الجداول تلقائياً عند أول طلب (أو شغّلها يدوياً في SQL Editor).
+> - التحديد يتم تلقائياً من `DATABASE_URL`: يبدأ بـ `postgres://` → Postgres، وإلا → SQLite. **لا يلمس أي ملف كود آخر.**
+> - الاختبارات تعمل على المحركين: `npm run test:data` (SQLite) و `DB_TEST_PG=1 npm run test:data` (Postgres في الذاكرة).
 
 ---
 
@@ -157,7 +162,7 @@ scripts/test-orm.mts     # اختبار تكامل لطبقة البيانات (
 ## 🗺️ خارطة الطريق المقترحة (بعد الإطلاق)
 
 - **إضافة نيتشات** بنفس المنطق (أقسام رئيسية جديدة) — دون لمس الكود.
-- **صور ومعرض** ورفع مخصص (حالياً روابط خارجية فقط).
+- **رفع الصور إلى R2** (جاهز): نموذج المحتوى فيه زر «⬆ رفع صورة إلى R2» بعد ضبط متغيرات `R2_*` (انظر دليل النشر).
 - **تصدير/نسخ احتياطي** لقاعدة البيانات.
 - **نشر تلقائي** (RSS/قناة تليجرام) لكل مقال جديد.
 - **تحسين SEO**: بيانات منظمة (JSON-LD: Article/BreadcrumbList) — الهيكل جاهز.
@@ -165,12 +170,62 @@ scripts/test-orm.mts     # اختبار تكامل لطبقة البيانات (
 
 ---
 
-## ⚠️ ملاحظات النشر (Production)
+## ☁️ النشر المجاني بالكامل (Vercel + Supabase + R2)
 
-- حوّل `metadataBase` في `src/app/layout.tsx` إلى نطاقك الفعلي (يُستخدم في Open Graph/sitemap).
-- حدّث نطاق `sitemap.ts` و`robots.ts` أيضاً.
-- ضع `SESSION_SECRET` قوياً في `.env` (لا تُحمّله في المستودع).
-- استخدم نطاقاً + HTTPS.
+المشروع يعمل **100% على الباقات المجانية** — لا يحتاج ريالاً واحداً:
+
+| الخدمة | الخطة المجانية | تكفي للمنصة |
+|---|---|---|
+| **Vercel** (الاستضافة) | Hobby: نطاقات مخصصة، SSL مجاني، 100GB نقل بيانات/شهر | ✅ حتى عشرات آلاف الزيارات شهرياً |
+| **Supabase** (قاعدة Postgres) | 500MB قاعدة + 5GB تخزين + SSL | ✅ مليارات الصفوف على هذه الحجم — سنوات من النمو |
+| **Cloudflare R2** (الصور) | 10GB تخزين + **صفر رسوم egress** | ✅ الصور هنا لا في Supabase (توفير رسوم النقل) |
+
+### الخطوات (≈ 20 دقيقة)
+
+**1) Supabase — إنشاء قاعدة البيانات**
+1. أنشئ حساباً على [supabase.com](https://supabase.com) ← **New Project** (اختر أقرب منطقة، مثال: `me-central-1` إذا متوفرة).
+2. من القائمة: **SQL Editor** ← الصق محتوى `prisma/postgres-schema.sql` ← **Run**.
+   (هذا اختيارية فقط للتسريع — التطبيق ينشئ الجداول تلقائياً عند أول طلب إن لم تكن موجودة).
+3. من **Settings → Database** انسخ **URI المباشر** (يبدأ بـ `postgresql://...`).
+
+**2) Vercel — الاستضافة**
+1. ارفع المستودع إلى GitHub ثم **Add New Project** في [vercel.com](https://vercel.com) واختر المستودع (Next.js يُكتشف تلقائياً — لا تغييرات بناء مطلوبة).
+2. في **Environment Variables** أضف:
+   - `DATABASE_URL` = URI المباشر من Supabase (نسخة `postgres://`).
+   - `SESSION_SECRET` = أي سلسلة عشوائية طويلة (`openssl rand -hex 32`).
+   - متغيرات R2 (من Cloudflare → R2 → **Manage R2 API Tokens**):
+     - `R2_ACCOUNT_ID`، `R2_ACCESS_KEY_ID`، `R2_SECRET_ACCESS_KEY`
+     - `R2_BUCKET` = اسم الدلو
+     - `NEXT_PUBLIC_R2_BASE_URL` = رابط الدلو العام (فعّل **Public Bucket** على الدلو واستخدم رابط `pub-....r2.dev`، أو نطاق CDN مخصص)
+3. **Deploy** ✅
+4. **النطاق:** من Vercel → Project → Settings → Domains → أضف نطاقك `.com` ← اتبع تعليمات DNS في Cloudflare (CNAME) ← HTTPS تلقائي.
+
+**3) تهيئة البيانات (مرة واحدة)**
+شغّل السيمد عبر متصفح Vercel أو محلياً مع نفس `DATABASE_URL`:
+```bash
+DATABASE_URL="postgresql://..." npx tsx scripts/seed.mts
+```
+- يخلق: حساب المدير (`admin@platform.local` / `Admin@12345`) + الإعدادات + النيتش الأول (التقويم والمواعيد) بكامل محتواه.
+- ⚠️ **غيّر كلمة مرور المدير فوراً** من `/admin/users`، وغيّر `SESSION_SECRET`.
+
+**4) SEO النهائي**
+- حوّل `metadataBase` في `src/app/layout.tsx` إلى نطاقك الفعلي + حدّث `sitemap.ts` و`robots.ts`.
+- أرسل sitemap إلى Google Search Console.
+
+### حدود الباقات المجانية ومتى تتوسع
+- **Vercel Hobby:** 100GB/شهر — موقع محتوى بعشرات آلاف الزيارات يستهلك <20GB. إذا تجاوزت → خطة Pro (20$) دون تغيير كود.
+- **Supabase Free:** قاعدة 500MB — صف صفحة زيارة ≈ 100 بايت → **5 ملايين زيارة** ≈ 500MB؛ والنمو الواقعي لا يقرّب ذلك في 12-18 شهراً. المشروع يتوقف مؤقتاً إن صفر زيارات لأسبوع (إيقاظه ثانية عند أول زيارة).
+- **R2:** 10GB تخزين — صورة مقال (WebP ≈100KB) → **100 ألف صورة**. صفر رسوم egress مهما زار.
+
+### محلياً (تطوير)
+```bash
+cp .env.example .env   # ثم عدّل القيم
+npm install
+npm run db:seed        # SQLite محلي — لا حاجة لـ Postgres على جهازك
+npm run dev
+npm run test:data      # اختبارات 23 فحصاً (SQLite)
+DB_TEST_PG=1 npm run test:data   # نفس الفحوص على Postgres (pg-mem)
+```
 
 ---
 

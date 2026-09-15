@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { createContent, updateContent } from '@/actions/content';
 import { slugify } from '@/lib/utils';
 import Markdown from '@/components/Markdown';
+import ImageUploader from './ImageUploader';
 
 export interface SectionOption {
   id: number;
@@ -61,6 +62,7 @@ export default function ContentForm({
 }) {
   const isEdit = !!initial.id;
   const [sectionId, setSectionId] = useState(initial.sectionId || sections[0]?.id || 0);
+  const [featuredImage, setFeaturedImage] = useState(initial.featuredImage || '');
   const subsections = useMemo(() => sections.find((s) => s.id === sectionId)?.subsections ?? [], [sections, sectionId]);
 
   return (
@@ -213,10 +215,20 @@ export default function ContentForm({
                 <span className={labelCls}>وصف SEO (150 حرفاً مثالياً)</span>
                 <textarea name="metaDescription" defaultValue={initial.metaDescription} rows={3} className={inputCls} />
               </label>
-              <label className="block">
+              <div>
                 <span className={labelCls}>رابط صورة مميزة (اختياري)</span>
-                <input name="featuredImage" defaultValue={initial.featuredImage} dir="ltr" className={inputCls + ' text-left'} placeholder="https://..." />
-              </label>
+                <input
+                  name="featuredImage"
+                  value={featuredImage}
+                  onChange={(e) => setFeaturedImage(e.target.value)}
+                  dir="ltr"
+                  className={inputCls + ' text-left'}
+                  placeholder="https://..."
+                />
+                <div className="mt-2">
+                  <ImageUploader value={featuredImage} onChange={setFeaturedImage} />
+                </div>
+              </div>
             </div>
           </div>
 

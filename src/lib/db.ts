@@ -1,18 +1,22 @@
 /**
- * Lightweight data layer (better-sqlite3) exposing a Prisma-like API for the
- * subset used by this platform. Swappable with Prisma later by replacing
- * this file only (call sites already use prisma.<model>.<method> style).
+ * Data layer: Prisma-like API over either SQLite (node:sqlite, default local dev)
+ * or Postgres (pg — Supabase/Neon in production).
+ * The active driver is chosen from DATABASE_URL:
+ *   - postgresql://... → Postgres
+ *   - anything else    → SQLite (prisma/dev.db)
+ * All call sites use prisma.<model>.<method> — swapping the database never
+ * touches app code.
  */
-import { DatabaseSync } from 'node:sqlite';
-import path from 'path';
-import fs from 'fs';
 import type { ContentItem, PageView, Section, Setting, Subsection, User } from './types';
+import type { Driver, SqlValue, Stmt } from './drivers/types';
+import { createSqliteDriver } from './drivers/sqlite';
+import { createPgDriver } from './drivers/pg';
 
-// ---------------- schema ----------------
-// The SQL DDL lives in prisma/schema.sql so the app (this file) and the seed
-// script share one source of truth.
-
-const SCHEMA = fs.readFileSync(path.join(process.cwd(), 'prisma', 'schema.sql'), 'utf8');
+export function createDriver(): Driver {
+  const url = process.env.DATABASE_URL || '';
+  if (url.startsWith('postgres://') || url.startsWith('postgresql://')) return createPgDriver(url);
+  return createSqliteDriver();
+}
 
 // ---------------- model metadata ----------------
 
@@ -127,9 +131,9 @@ const MODELS: Record<string, ModelMeta> = {
 
 interface RelDef {
   model: string;
-  fk: string; // column in THIS table (forward) or in TARGET table (reverse), SQL name
-  ref: string; // column in target (forward) / this table (reverse)
-  camel: string; // camel key on the row holding the fk value (forward)
+  fk: string; // column in TARGET table (reverse) or this table (forward)
+  ref: string;
+  camel: string; // camel key holding the fk value (forward)
 }
 
 const RELS: Record<string, { forward: Record<string, RelDef>; reverse: Record<string, RelDef> }> = {
@@ -159,60 +163,9 @@ const RELS: Record<string, { forward: Record<string, RelDef>; reverse: Record<st
   },
 };
 
-// ---------------- connection ----------------
+// ---------------- SQL building (dialect-agnostic) ----------------
 
-const dbPath = path.join(process.cwd(), 'prisma', 'dev.db');
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-const db = new DatabaseSync(dbPath);
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
-db.exec(SCHEMA);
-
-// ---------------- helpers ----------------
-
-type SqlValue = string | number | null;
-
-function toSqlValue(v: unknown): SqlValue {
-  if (v instanceof Date) return v.toISOString();
-  if (typeof v === 'boolean') return v ? 1 : 0;
-  if (v == null) return null;
-  if (typeof v === 'number') return v;
-  return String(v);
-}
-
-function mapRowOut(model: string, row: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!row) return undefined;
-  const meta = MODELS[model];
-  const out: Record<string, unknown> = {};
-  for (const [cam, sqlCol] of Object.entries(meta.cols)) {
-    let v = row[sqlCol];
-    if (meta.dates.includes(cam) && typeof v === 'string' && v) v = new Date(v);
-    if (meta.bools.includes(cam)) v = !!v;
-    out[cam] = v;
-  }
-  return out;
-}
-
-function mapDataIn(model: string, data: Record<string, unknown>): { cols: string[]; params: SqlValue[] } {
-  const meta = MODELS[model];
-  const cols: string[] = [];
-  const params: SqlValue[] = [];
-  for (const [key, v] of Object.entries(data)) {
-    if (v === undefined) continue;
-    const sqlCol = meta.cols[key];
-    if (!sqlCol) continue;
-    cols.push(sqlCol);
-    params.push(toSqlValue(v));
-  }
-  return { cols, params };
-}
-
-interface WhereArgs {
-  model: string;
-  where?: Record<string, unknown>;
-}
-
-function buildWhere({ model, where }: WhereArgs, alias = ''): { sql: string; params: SqlValue[] } {
+function buildWhere({ model, where }: { model: string; where?: Record<string, unknown> }, alias = ''): { sql: string; params: SqlValue[] } {
   if (!where) return { sql: '', params: [] };
   const meta = MODELS[model];
   const conds: string[] = [];
@@ -229,43 +182,44 @@ function buildWhere({ model, where }: WhereArgs, alias = ''): { sql: string; par
     }
     if (key === 'AND') continue;
 
-    // relation filter (e.g. { section: { isActive: true } })
+    // relation filter (e.g. { section: { isActive: true } }) → non-correlated IN subquery
     const rel = RELS[model]?.forward[key];
     if (rel && typeof value === 'object' && value !== null) {
-      const inner = buildWhere({ model: rel.model, where: value as Record<string, unknown> }, 'r');
+      const inner = buildWhere({ model: rel.model, where: value as Record<string, unknown> });
       const fk = meta.cols[rel.camel];
       const innerCond = inner.sql.replace(/^\s*WHERE\s+/, '');
-      conds.push(`EXISTS (SELECT 1 FROM ${MODELS[rel.model].table} r WHERE r.id = ${t}${fk}${innerCond ? ' AND ' + innerCond : ''})`);
+      conds.push(`${q(fk)} IN (SELECT ${q('id')} FROM ${MODELS[rel.model].table}${innerCond ? ' WHERE ' + innerCond : ''})`);
       params.push(...inner.params);
       continue;
     }
 
     const sqlCol = meta.cols[key];
     if (!sqlCol) continue;
+    const qc = q(sqlCol); // quote identifier (order, key, ... are reserved words in PG)
     if (typeof value === 'object' && value !== null) {
       const ops = value as Record<string, unknown>;
       if ('contains' in ops) {
-        conds.push(`${t}${sqlCol} LIKE ?`);
+        conds.push(`${t}${qc} LIKE ?`);
         params.push(`%${ops.contains}%`);
       } else if ('gte' in ops) {
-        conds.push(`${t}${sqlCol} >= ?`);
+        conds.push(`${t}${qc} >= ?`);
         params.push(toSqlValue(ops.gte));
       } else if ('gt' in ops) {
-        conds.push(`${t}${sqlCol} > ?`);
+        conds.push(`${t}${qc} > ?`);
         params.push(toSqlValue(ops.gt));
       } else if ('lte' in ops) {
-        conds.push(`${t}${sqlCol} <= ?`);
+        conds.push(`${t}${qc} <= ?`);
         params.push(toSqlValue(ops.lte));
       } else if ('not' in ops) {
-        conds.push(`${t}${sqlCol} != ?`);
+        conds.push(`${t}${qc} != ?`);
         params.push(toSqlValue(ops.not));
       } else if ('in' in ops) {
         const arr = ops.in as unknown[];
-        conds.push(`${t}${sqlCol} IN (${arr.map(() => '?').join(',')})`);
+        conds.push(`${t}${qc} IN (${arr.map(() => '?').join(',')})`);
         params.push(...arr.map(toSqlValue));
       }
     } else {
-      conds.push(`${t}${sqlCol} = ?`);
+      conds.push(`${t}${qc} = ?`);
       params.push(toSqlValue(value));
     }
   }
@@ -285,7 +239,20 @@ function buildOrderBy(model: string, orderBy?: string | Record<string, string> |
   return parts.length ? ` ORDER BY ${parts.join(', ')}` : '';
 }
 
-// ---------------- includes ----------------
+function toSqlValue(v: unknown): SqlValue {
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'boolean') return v; // node:sqlite & pg both accept JS booleans
+  if (v == null) return null;
+  if (typeof v === 'number') return v;
+  return String(v);
+}
+
+/** Quote an SQL identifier (safe for reserved words like "order" / "key"). */
+function q(col: string): string {
+  return `"${col}"`;
+}
+
+// ---------------- ORM factory ----------------
 
 interface IncludeOpts {
   where?: Record<string, unknown>;
@@ -294,187 +261,223 @@ interface IncludeOpts {
   include?: Record<string, IncludeOpts | boolean>;
 }
 
-function resolveIncludes(model: string, rows: Record<string, unknown>[], include?: Record<string, IncludeOpts | boolean>) {
-  if (!include || rows.length === 0) return rows;
-  const meta = MODELS[model];
-
-  for (const [key, rawOpts] of Object.entries(include)) {
-    const opts = (rawOpts === true ? {} : rawOpts) as IncludeOpts;
-    const fwd = RELS[model]?.forward[key];
-    const rev = RELS[model]?.reverse[key];
-
-    if (fwd) {
-      const fkCamel = fwd.camel;
-      const ids = [...new Set(rows.map((r) => r[fkCamel]).filter(Boolean))] as number[];
-      if (ids.length) {
-        const w = buildWhere({ model: fwd.model, where: opts.where });
-        const sql = `SELECT * FROM ${MODELS[fwd.model].table}${w.sql}${w.sql ? ' AND ' : ' WHERE '}id IN (${ids.map(() => '?').join(',')})${buildOrderBy(fwd.model, opts.orderBy)}`;
-        const rawTargets = db.prepare(sql).all(...w.params, ...ids) as Record<string, unknown>[];
-        const mapped = rawTargets.map((t) => mapRowOut(fwd.model, t)!);
-        if (opts.include) resolveIncludes(fwd.model, mapped, opts.include);
-        const map = new Map(mapped.map((t) => [t.id as number, t]));
-        for (const r of rows) {
-          const id = r[fkCamel] as number;
-          (r as Record<string, unknown>)[key] = map.get(id) ?? null;
-        }
-      } else {
-        for (const r of rows) (r as Record<string, unknown>)[key] = null;
-      }
-    } else if (rev) {
-      const ids = [...new Set(rows.map((r) => r.id).filter(Boolean))] as number[];
-      if (ids.length) {
-        const w = buildWhere({ model: rev.model, where: opts.where });
-        const fkCol = rev.fk;
-        const sql = `SELECT * FROM ${MODELS[rev.model].table}${w.sql}${w.sql ? ' AND ' : ' WHERE '}${fkCol} IN (${ids.map(() => '?').join(',')})${buildOrderBy(rev.model, opts.orderBy)}`;
-        const rawTargets = db.prepare(sql).all(...w.params, ...ids) as Record<string, unknown>[];
-        const mapped = rawTargets.map((t) => mapRowOut(rev.model, t)!);
-        if (opts.include) resolveIncludes(rev.model, mapped, opts.include);
-        // pair raw fk values with their mapped rows (order preserved)
-        const pairs = rawTargets.map((t, i) => [t[fkCol] as number, mapped[i]] as const);
-        for (const r of rows) {
-          const mine = pairs.filter(([fk]) => fk === r.id).map(([, m]) => m);
-          (r as Record<string, unknown>)[key] = opts.take ? mine.slice(0, opts.take) : mine;
-        }
-      } else {
-        for (const r of rows) (r as Record<string, unknown>)[key] = [];
-      }
-    } else {
-      for (const r of rows) (r as Record<string, unknown>)[key] = undefined;
+export function createOrm(driver: Driver) {
+  const mapRowOut = (model: string, row: Record<string, unknown> | undefined): Record<string, unknown> | undefined => {
+    if (!row) return undefined;
+    const meta = MODELS[model];
+    const out: Record<string, unknown> = {};
+    for (const [cam, sqlCol] of Object.entries(meta.cols)) {
+      let v = row[sqlCol];
+      if (meta.dates.includes(cam) && typeof v === 'string' && v) v = new Date(v);
+      if (meta.bools.includes(cam)) v = !!v;
+      out[cam] = v;
     }
-    void meta;
-  }
-  return rows;
-}
+    return out;
+  };
 
-// ---------------- model client ----------------
-
-function createModel(model: string) {
-  const meta = MODELS[model];
-
-  function findMany(args?: { where?: Record<string, unknown>; orderBy?: string | Record<string, string> | Array<Record<string, string>>; take?: number; include?: Record<string, IncludeOpts | boolean>; select?: Record<string, boolean> }) {
-    const w = buildWhere({ model, where: args?.where });
-    const selectCols = args?.select ? Object.keys(args.select) : undefined;
-    const sqlCols = selectCols ? selectCols.map((c) => meta.cols[c] || c) : ['*'];
-    const sql = `SELECT ${sqlCols.join(', ')} FROM ${meta.table}${w.sql}${buildOrderBy(model, args?.orderBy)}${args?.take != null ? ` LIMIT ${args.take}` : ''}`;
-    let rows = db.prepare(sql).all(...w.params) as Record<string, unknown>[];
-    if (selectCols) {
-      rows = rows.map((r) => {
-        const o: Record<string, unknown> = {};
-        for (const c of selectCols) o[c] = r[meta.cols[c] || c];
-        return o;
-      });
-    } else {
-      rows = rows.map((r) => mapRowOut(model, r)!) ;
-      if (args?.include) resolveIncludes(model, rows, args.include);
-    }
-    return Promise.resolve(rows);
-  }
-
-  function findUnique(args: { where: Record<string, unknown>; include?: Record<string, IncludeOpts | boolean> }) {
-    const w = buildWhere({ model, where: args.where });
-    const sql = `SELECT * FROM ${meta.table}${w.sql} LIMIT 1`;
-    const row = db.prepare(sql).get(...w.params) as Record<string, unknown> | undefined;
-    if (!row) return Promise.resolve(null);
-    const out = mapRowOut(model, row)!;
-    if (args.include) resolveIncludes(model, [out], args.include);
-    return Promise.resolve(out);
-  }
-
-  function create(args: { data: Record<string, unknown> }) {
-    if (model === 'setting') {
-      const { cols, params } = mapDataIn(model, args.data);
-      // key is the PK
-      db.prepare(`INSERT INTO ${meta.table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...params);
-      const row = db.prepare(`SELECT * FROM ${meta.table} WHERE key = ?`).get(String(args.data.key)) as Record<string, unknown>;
-      return Promise.resolve(mapRowOut(model, row));
-    }
-    const { cols, params } = mapDataIn(model, args.data);
-    const res = db.prepare(`INSERT INTO ${meta.table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...params);
-    const row = db.prepare(`SELECT * FROM ${meta.table} WHERE id = ?`).get(res.lastInsertRowid) as Record<string, unknown>;
-    return Promise.resolve(mapRowOut(model, row));
-  }
-
-  function update(args: { where: Record<string, unknown>; data: Record<string, unknown> }) {
-    const sets: string[] = [];
+  const mapDataIn = (model: string, data: Record<string, unknown>): { cols: string[]; params: SqlValue[] } => {
+    const meta = MODELS[model];
+    const cols: string[] = [];
     const params: SqlValue[] = [];
-    for (const [key, v] of Object.entries(args.data)) {
+    for (const [key, v] of Object.entries(data)) {
+      if (v === undefined) continue;
       const sqlCol = meta.cols[key];
-      if (!sqlCol || v === undefined) continue;
-      // Prisma-style numeric ops: { increment: n } / { decrement: n }
-      if (v && typeof v === 'object' && !Array.isArray(v) && (typeof (v as { increment?: number }).increment === 'number' || typeof (v as { decrement?: number }).decrement === 'number')) {
-        const inc = (v as { increment?: number }).increment ?? 0;
-        const dec = (v as { decrement?: number }).decrement ?? 0;
-        sets.push(`${sqlCol} = ${sqlCol} + ?`);
-        params.push(inc - dec);
-        continue;
-      }
-      sets.push(`${sqlCol} = ?`);
+      if (!sqlCol) continue;
+      cols.push(q(sqlCol));
       params.push(toSqlValue(v));
     }
-    if (!sets.length) return Promise.resolve(findUnique({ where: args.where }));
-    const w = buildWhere({ model, where: args.where });
-    db.prepare(`UPDATE ${meta.table} SET ${sets.join(', ')}${w.sql}`).run(...params, ...w.params);
-    if (meta.cols.updatedAt && !(args.data as Record<string, unknown>).updatedAt) {
-      db.prepare(`UPDATE ${meta.table} SET updated_at = ?${w.sql}`).run(new Date().toISOString(), ...w.params);
-    }
-    return findUnique({ where: args.where });
-  }
+    return { cols, params };
+  };
 
-  function upsert(args: { where: Record<string, unknown>; update: Record<string, unknown>; create: Record<string, unknown> }) {
-    const existing = (db.prepare(`SELECT * FROM ${meta.table}${buildWhere({ model, where: args.where }).sql}`).all(...buildWhere({ model, where: args.where }).params) as Record<string, unknown>[])?.[0];
-    if (existing) return update({ where: args.where, data: args.update });
-    return create({ data: args.create });
-  }
+  const resolveIncludes = (model: string, rows: Record<string, unknown>[], include?: Record<string, IncludeOpts | boolean>): Promise<void> =>
+    (async () => {
+      if (!include || rows.length === 0) return;
 
-  function del(args: { where: Record<string, unknown> }) {
-    const w = buildWhere({ model, where: args.where });
-    db.prepare(`DELETE FROM ${meta.table}${w.sql}`).run(...w.params);
-    return Promise.resolve({});
-  }
+      for (const [key, rawOpts] of Object.entries(include)) {
+        const opts = (rawOpts === true ? {} : rawOpts) as IncludeOpts;
+        const fwd = RELS[model]?.forward[key];
+        const rev = RELS[model]?.reverse[key];
 
-  function count(args?: { where?: Record<string, unknown> }) {
-    const w = buildWhere({ model, where: args?.where });
-    const row = db.prepare(`SELECT COUNT(*) AS c FROM ${meta.table}${w.sql}`).get(...w.params) as { c: number };
-    return Promise.resolve(row.c);
-  }
-
-  function groupBy(args: { by: string[]; where?: Record<string, unknown>; _count?: { _all: true }; orderBy?: Record<string, unknown>; take?: number }) {
-    const w = buildWhere({ model, where: args.where });
-    const cols = args.by.map((c) => meta.cols[c] || c);
-    let order = 'ORDER BY c DESC';
-    if (args.orderBy) {
-      const [[k, dir]] = Object.entries(args.orderBy as Record<string, unknown>)[0] || [];
-      if (k && typeof dir === 'object' && dir !== null) {
-        const [[f, d]] = Object.entries(dir as Record<string, string>);
-        order = `ORDER BY c ${String(d).toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
-        void f;
+        if (fwd) {
+          const fkCamel = fwd.camel;
+          const ids = [...new Set(rows.map((r) => r[fkCamel]).filter(Boolean))] as number[];
+          if (ids.length) {
+            const w = buildWhere({ model: fwd.model, where: opts.where });
+            const sql = `SELECT * FROM ${MODELS[fwd.model].table}${w.sql}${w.sql ? ' AND ' : ' WHERE '}id IN (${ids.map(() => '?').join(',')})${buildOrderBy(fwd.model, opts.orderBy)}`;
+            const rawTargets = await driver.prepare(sql).all(...w.params, ...ids);
+            const mapped = rawTargets.map((t) => mapRowOut(fwd.model, t)!);
+            await resolveIncludes(fwd.model, mapped, opts.include);
+            const map = new Map(mapped.map((t) => [t.id as number, t]));
+            for (const r of rows) {
+              const id = r[fkCamel] as number;
+              (r as Record<string, unknown>)[key] = map.get(id) ?? null;
+            }
+          } else {
+            for (const r of rows) (r as Record<string, unknown>)[key] = null;
+          }
+        } else if (rev) {
+          const ids = [...new Set(rows.map((r) => r.id).filter(Boolean))] as number[];
+          if (ids.length) {
+            const w = buildWhere({ model: rev.model, where: opts.where });
+            const fkCol = rev.fk;
+            const sql = `SELECT * FROM ${MODELS[rev.model].table}${w.sql}${w.sql ? ' AND ' : ' WHERE '}${fkCol} IN (${ids.map(() => '?').join(',')})${buildOrderBy(rev.model, opts.orderBy)}`;
+            const rawTargets = await driver.prepare(sql).all(...w.params, ...ids);
+            const mapped = rawTargets.map((t) => mapRowOut(rev.model, t)!);
+            await resolveIncludes(rev.model, mapped, opts.include);
+            const pairs = rawTargets.map((t, i) => [t[fkCol] as number, mapped[i]] as const);
+            for (const r of rows) {
+              const mine = pairs.filter(([fk]) => fk === r.id).map(([, m]) => m);
+              (r as Record<string, unknown>)[key] = opts.take ? mine.slice(0, opts.take) : mine;
+            }
+          } else {
+            for (const r of rows) (r as Record<string, unknown>)[key] = [];
+          }
+        } else {
+          for (const r of rows) (r as Record<string, unknown>)[key] = undefined;
+        }
       }
+    })();
+
+  function createModel(model: string) {
+    const meta = MODELS[model];
+
+    async function findMany(args?: { where?: Record<string, unknown>; orderBy?: string | Record<string, string> | Array<Record<string, string>>; take?: number; include?: Record<string, IncludeOpts | boolean>; select?: Record<string, boolean> }) {
+      const w = buildWhere({ model, where: args?.where });
+      const selectCols = args?.select ? Object.keys(args.select) : undefined;
+      const sqlCols = selectCols ? selectCols.map((c) => q(meta.cols[c] || c)) : ['*'];
+      const sql = `SELECT ${sqlCols.join(', ')} FROM ${meta.table}${w.sql}${buildOrderBy(model, args?.orderBy)}${args?.take != null ? ` LIMIT ${args.take}` : ''}`;
+      let rows = await driver.prepare(sql).all(...w.params);
+      if (selectCols) {
+        rows = rows.map((r) => {
+          const o: Record<string, unknown> = {};
+          for (const c of selectCols) o[c] = r[meta.cols[c] || c];
+          return o;
+        });
+      } else {
+        rows = rows.map((r) => mapRowOut(model, r)!);
+        await resolveIncludes(model, rows, args?.include);
+      }
+      return rows;
     }
-    const rows = db
-      .prepare(`SELECT ${cols.join(', ')}, COUNT(*) AS c FROM ${meta.table}${w.sql} GROUP BY ${cols.join(', ')} ${order}${args.take != null ? ` LIMIT ${args.take}` : ''}`)
-      .all(...w.params) as Record<string, unknown>[];
-    return Promise.resolve(
-      rows.map((r) => {
+
+    async function findUnique(args: { where: Record<string, unknown>; include?: Record<string, IncludeOpts | boolean> }) {
+      const w = buildWhere({ model, where: args.where });
+      const sql = `SELECT * FROM ${meta.table}${w.sql} LIMIT 1`;
+      const row = await driver.prepare(sql).get(...w.params);
+      if (!row) return null;
+      const out = mapRowOut(model, row)!;
+      await resolveIncludes(model, [out], args.include);
+      return out;
+    }
+
+    async function create(args: { data: Record<string, unknown> }) {
+      const { cols, params } = mapDataIn(model, args.data);
+      const res = await driver
+        .prepare(`INSERT INTO ${meta.table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`)
+        .run(...params);
+      if (model === 'setting') {
+        const row = await driver.prepare(`SELECT * FROM ${meta.table} WHERE ${q('key')} = ?`).get(String(args.data.key));
+        return mapRowOut(model, row) as Record<string, unknown>;
+      }
+      const row = await driver.prepare(`SELECT * FROM ${meta.table} WHERE ${q('id')} = ?`).get(Number(res.lastInsertRowid));
+      return mapRowOut(model, row) as Record<string, unknown>;
+    }
+
+    async function update(args: { where: Record<string, unknown>; data: Record<string, unknown> }) {
+      const sets: string[] = [];
+      const params: SqlValue[] = [];
+      for (const [key, v] of Object.entries(args.data)) {
+        const sqlCol = meta.cols[key];
+        if (!sqlCol || v === undefined) continue;
+        if (v && typeof v === 'object' && !Array.isArray(v) && (typeof (v as { increment?: number }).increment === 'number' || typeof (v as { decrement?: number }).decrement === 'number')) {
+          const inc = (v as { increment?: number }).increment ?? 0;
+          const dec = (v as { decrement?: number }).decrement ?? 0;
+          sets.push(`${q(sqlCol)} = ${q(sqlCol)} + ?`);
+          params.push(inc - dec);
+          continue;
+        }
+        sets.push(`${q(sqlCol)} = ?`);
+        params.push(toSqlValue(v));
+      }
+      if (!sets.length) return findUnique({ where: args.where });
+      const w = buildWhere({ model, where: args.where });
+      await driver.prepare(`UPDATE ${meta.table} SET ${sets.join(', ')}${w.sql}`).run(...params, ...w.params);
+      if (meta.cols.updatedAt && !(args.data as Record<string, unknown>).updatedAt) {
+        await driver.prepare(`UPDATE ${meta.table} SET ${q('updated_at')} = ?${w.sql}`).run(new Date().toISOString(), ...w.params);
+      }
+      return findUnique({ where: args.where });
+    }
+
+    async function upsert(args: { where: Record<string, unknown>; update: Record<string, unknown>; create: Record<string, unknown> }) {
+      const w = buildWhere({ model, where: args.where });
+      const existing = await driver.prepare(`SELECT * FROM ${meta.table}${w.sql} LIMIT 1`).get(...w.params);
+      if (existing) return update({ where: args.where, data: args.update });
+      return create({ data: args.create });
+    }
+
+    async function del(args: { where: Record<string, unknown> }) {
+      const w = buildWhere({ model, where: args.where });
+      await driver.prepare(`DELETE FROM ${meta.table}${w.sql}`).run(...w.params);
+      return {};
+    }
+
+    async function deleteMany(args?: { where?: Record<string, unknown> }) {
+      const w = buildWhere({ model, where: args?.where });
+      await driver.prepare(`DELETE FROM ${meta.table}${w.sql}`).run(...w.params);
+      return {};
+    }
+
+    async function count(args?: { where?: Record<string, unknown> }) {
+      const w = buildWhere({ model, where: args?.where });
+      const row = (await driver.prepare(`SELECT COUNT(*) AS c FROM ${meta.table}${w.sql}`).get(...w.params)) as { c: number | string } | undefined;
+      return Number(row?.c ?? 0);
+    }
+
+    async function groupBy(args: { by: string[]; where?: Record<string, unknown>; _count?: { _all: true }; orderBy?: Record<string, unknown>; take?: number }) {
+      const w = buildWhere({ model, where: args.where });
+      const cols = args.by.map((c) => q(meta.cols[c] || c));
+      let order = 'ORDER BY c DESC';
+      if (args.orderBy) {
+        const [[k, dir]] = Object.entries(args.orderBy as Record<string, unknown>)[0] || [];
+        if (k && typeof dir === 'object' && dir !== null) {
+          const [[f, d]] = Object.entries(dir as Record<string, string>);
+          order = `ORDER BY c ${String(d).toUpperCase() === 'ASC' ? 'ASC' : 'DESC'}`;
+          void f;
+        }
+      }
+      const rows = await driver
+        .prepare(`SELECT ${cols.join(', ')}, COUNT(*) AS c FROM ${meta.table}${w.sql} GROUP BY ${cols.join(', ')} ${order}${args.take != null ? ` LIMIT ${args.take}` : ''}`)
+        .all(...w.params);
+      return rows.map((r) => {
         const out: Record<string, unknown> = {};
         for (const c of args.by) out[c] = r[meta.cols[c] || c];
         out._count = { _all: Number(r.c) };
         return out;
-      })
-    );
+      });
+    }
+
+    return { findMany, findUnique, create, update, upsert, delete: del, deleteMany, count, groupBy };
   }
 
-  return { findMany, findUnique, create, update, upsert, delete: del, count, groupBy };
-}
+  const $queryRaw = async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    let sql = '';
+    strings.forEach((s, i) => {
+      sql += s;
+      if (i < values.length) sql += '?';
+    });
+    const params: SqlValue[] = values.map((v) => toSqlValue(v));
+    return driver.prepare(sql).all(...params);
+  };
 
-const $queryRaw = (strings: TemplateStringsArray, ...values: unknown[]) => {
-  let sql = '';
-  strings.forEach((s, i) => {
-    sql += s;
-    if (i < values.length) sql += '?';
-  });
-  const params: SqlValue[] = values.map((v) => toSqlValue(v));
-  return Promise.resolve(db.prepare(sql).all(...params) as Record<string, unknown>[]);
-};
+  const user = createModel('user') as unknown as ModelClient<User>;
+  const section = createModel('section') as unknown as ModelClient<Section>;
+  const subsection = createModel('subsection') as unknown as ModelClient<Subsection>;
+  const contentItem = createModel('contentItem') as unknown as ModelClient<ContentItem>;
+  const pageView = createModel('pageView') as unknown as ModelClient<PageView>;
+  const setting = createModel('setting') as unknown as ModelClient<Setting>;
+
+  return { user, section, subsection, contentItem, pageView, setting, $queryRaw };
+}
 
 // ---------------- typed public API ----------------
 
@@ -491,6 +494,7 @@ export interface ModelClient<T> {
   update(args: { where: Record<string, unknown>; data: Record<string, unknown> }): Promise<T | null>;
   upsert(args: { where: Record<string, unknown>; update: Record<string, unknown>; create: Record<string, unknown> }): Promise<T | null>;
   delete(args: { where: Record<string, unknown> }): Promise<unknown>;
+  deleteMany(args?: { where?: Record<string, unknown> }): Promise<unknown>;
   count(args?: { where?: Record<string, unknown> }): Promise<number>;
   groupBy(args: {
     by: string[];
@@ -501,11 +505,18 @@ export interface ModelClient<T> {
   }): Promise<Array<T & { _count: { _all: number } }>>;
 }
 
-const user = createModel('user') as unknown as ModelClient<User>;
-const section = createModel('section') as unknown as ModelClient<Section>;
-const subsection = createModel('subsection') as unknown as ModelClient<Subsection>;
-const contentItem = createModel('contentItem') as unknown as ModelClient<ContentItem>;
-const pageView = createModel('pageView') as unknown as ModelClient<PageView>;
-const setting = createModel('setting') as unknown as ModelClient<Setting>;
+export const driver = createDriver();
+export const prisma = createOrm(driver);
 
-export const prisma = { user, section, subsection, contentItem, pageView, setting, $queryRaw };
+/** Dialect-aware expression for bucketing a timestamptz/iso column by day. */
+export function dateExpr(col: string): string {
+  return driver.kind === 'postgres' ? `${col}::date` : `date(${col})`;
+}
+
+/** Normalize a raw day value (string or Date) to YYYY-MM-DD. */
+export function dayKey(v: unknown): string {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+
+export type { Stmt };

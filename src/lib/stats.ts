@@ -1,4 +1,4 @@
-import { prisma } from './db';
+import { prisma, dateExpr, dayKey } from './db';
 
 export interface DayPoint {
   d: string; // YYYY-MM-DD
@@ -55,10 +55,10 @@ export async function getKpis() {
 export async function getDailySeries(days: number): Promise<DayPoint[]> {
   const since = startOfDay(days - 1);
   const rows = (await prisma.$queryRaw`
-    SELECT date(created_at) AS d, COUNT(*) AS c FROM page_views WHERE created_at >= ${since} GROUP BY d
-  `) as Array<{ d: string; c: number | string }>;
+    SELECT ${dateExpr('created_at')} AS d, COUNT(*) AS c FROM page_views WHERE created_at >= ${since} GROUP BY 1
+  `) as Array<{ d: string | Date; c: number | string }>;
   const map = new Map<string, number>();
-  for (const r of rows) map.set(String(r.d).slice(0, 10), Number(r.c));
+  for (const r of rows) map.set(dayKey(r.d), Number(r.c));
   const out: DayPoint[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date();

@@ -6,3 +6,8 @@ prisma/dev.db
 prisma/dev.db-*
 *.log
 .DS_Store
+
+# environment
+.env
+.env.local
+tsconfig.tsbuildinfo

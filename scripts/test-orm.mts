@@ -1,5 +1,28 @@
-/* Integration test for the data layer: CRUD + includes + groupBy + analytics. */
-import { prisma } from '../src/lib/db';
+/* Integration test for the data layer: CRUD + includes + groupBy + analytics.
+   Run:  npx tsx scripts/test-orm.mts          → SQLite (prisma/dev.db)
+         DB_TEST_PG=1 npx tsx scripts/test-orm.mts → Postgres (in-memory via pg-mem) */
+import { createOrm } from '../src/lib/db';
+
+type Prisma = ReturnType<typeof createOrm>;
+
+let prisma: Prisma;
+
+if (process.env.DB_TEST_PG === '1') {
+  const { newDb } = await import('pg-mem');
+  const fs = await import('fs');
+  const path = await import('path');
+  const ddl = fs.readFileSync(path.join(process.cwd(), 'prisma', 'postgres-schema.sql'), 'utf8');
+  const mem = newDb();
+  await mem.public.none(ddl);
+  const { createPgDriver } = await import('../src/lib/drivers/pg');
+  const { runSeed } = await import('./seed.mts');
+  const { Pool } = mem.adapters.createPg() as unknown as { Pool: new () => object };
+  prisma = createOrm(createPgDriver(new Pool() as never, { autoDdl: false }));
+  await runSeed(prisma as never);
+  console.log('— running against in-memory Postgres (pg-mem) —');
+} else {
+  prisma = (await import('../src/lib/db')).prisma;
+}
 
 let pass = 0;
 let fail = 0;
@@ -14,6 +37,10 @@ function check(name: string, cond: boolean, extra?: unknown) {
 }
 
 async function main() {
+  // clean leftovers from previous runs (idempotent re-runs)
+  await prisma.contentItem.deleteMany({ where: { slug: 'test-item-x1' } });
+  await prisma.pageView.deleteMany({ where: { sessionId: 'test-sess-orm' } });
+
   console.log('— content CRUD —');
   const created = (await prisma.contentItem.create({
     data: {
