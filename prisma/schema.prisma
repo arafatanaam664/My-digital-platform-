@@ -1,0 +1,98 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "wasm"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         String    @default("editor") // admin | editor
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model Section {
+  id          Int          @id @default(autoincrement())
+  slug        String       @unique
+  name        String
+  description String?
+  icon        String       @default("📂")
+  order       Int          @default(0)
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  subsections Subsection[]
+  items       ContentItem[]
+}
+
+model Subsection {
+  id          Int           @id @default(autoincrement())
+  slug        String        @unique
+  sectionId   Int
+  section     Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  type        String        @default("articles") // articles | guides | tools | pages
+  order       Int           @default(0)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  items       ContentItem[]
+}
+
+model ContentItem {
+  id              Int         @id @default(autoincrement())
+  slug            String      @unique
+  type            String // article | guide | tool | page
+  title           String
+  excerpt         String?
+  body            String      @default("")
+  toolKey         String?
+  sectionId       Int
+  section         Section     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subsectionId    Int
+  subsection      Subsection  @relation(fields: [subsectionId], references: [id], onDelete: Cascade)
+  metaTitle       String?
+  metaDescription String?
+  featuredImage   String?
+  tags            String?
+  status          String      @default("draft") // draft | published
+  publishedAt     DateTime?
+  views           Int         @default(0)
+  order           Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  pageViews       PageView[]
+}
+
+model PageView {
+  id        Int           @id @default(autoincrement())
+  contentId Int?
+  content   ContentItem?  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  path      String
+  sectionId Int?
+  type      String        @default("other") // home | section | subsection | content | search | other
+  referrer  String?
+  userAgent String?
+  device    String?
+  browser   String?
+  sessionId String?
+  createdAt DateTime      @default(now())
+
+  @@index([createdAt])
+  @@index([path])
+  @@index([contentId])
+  @@index([sessionId])
+}
+
+model Setting {
+  key   String  @id
+  value String?
+}

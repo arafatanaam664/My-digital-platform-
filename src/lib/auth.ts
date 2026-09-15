@@ -1,0 +1,64 @@
+import crypto from 'crypto';
+import { cookies } from 'next/headers';
+import bcrypt from 'bcryptjs';
+import { prisma } from './db';
+
+const COOKIE = 'platform_session';
+
+function secret(): string {
+  return process.env.SESSION_SECRET || 'dev-secret-change-me';
+}
+
+function sign(payload: string): string {
+  return crypto.createHmac('sha256', secret()).update(payload).digest('hex');
+}
+
+export function createSessionToken(userId: number): string {
+  const p = Buffer.from(JSON.stringify({ u: userId, exp: Date.now() + 7 * 864e5 })).toString('base64url');
+  return `${p}.${sign(p)}`;
+}
+
+export function verifySessionToken(token: string): number | null {
+  const [p, s] = token.split('.');
+  if (!p || !s) return null;
+  if (sign(p) !== s) return null;
+  try {
+    const data = JSON.parse(Buffer.from(p, 'base64url').toString('utf8'));
+    if (typeof data.u !== 'number' || data.exp < Date.now()) return null;
+    return data.u;
+  } catch {
+    return null;
+  }
+}
+
+export function setSessionCookie(token: string) {
+  cookies().set(COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 7 * 86400,
+  });
+}
+
+export async function getSessionUser() {
+  const token = cookies().get(COOKIE)?.value;
+  if (!token) return null;
+  const uid = verifySessionToken(token);
+  if (!uid) return null;
+  const user = await prisma.user.findUnique({ where: { id: uid } });
+  return user && user.isActive ? user : null;
+}
+
+export async function requireUser() {
+  const user = await getSessionUser();
+  if (!user) throw new Error('UNAUTHORIZED');
+  return user;
+}
+
+export function hashPassword(pw: string): Promise<string> {
+  return bcrypt.hash(pw, 10);
+}
+
+export function verifyPassword(pw: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(pw, hash);
+}
