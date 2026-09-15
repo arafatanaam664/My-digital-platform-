@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getSettings } from '@/lib/settings';
+import './globals.css';
 
 export const dynamic = 'force-dynamic';
 
