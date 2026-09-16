@@ -8,6 +8,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const [checked, setChecked] = useState(false);
   const router = useRouter();
 
   async function submit(e: React.FormEvent) {
@@ -25,8 +27,15 @@ export default function LoginPage() {
         setError(data.error || 'فشل تسجيل الدخول');
         return;
       }
+      // Verify the browser actually kept the session cookie (blocked in some
+      // embedded/cross-origin contexts — third-party cookie blocking).
+      const chk = await fetch('/api/debug/session').then((r) => r.json().catch(() => null));
+      if (chk && chk.cookie !== 'valid') {
+        setBlocked(true);
+        setChecked(true);
+        return;
+      }
       router.replace('/admin/dashboard');
-      router.refresh();
     } catch {
       setError('حدث خطأ، حاول مجدداً');
     } finally {
@@ -68,6 +77,19 @@ export default function LoginPage() {
             />
           </label>
           {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-600">{error}</p>}
+          {checked && blocked && (
+            <div dir="auto" className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-800">
+              <p>✅ تم التحقق من كلمة المرور بنجاح، لكن متصفحك <b>منع حفظ كوكي الجلسة</b> لأن الموقع مفتوح في إطار مضمّن (حماية من كوكيز الطرف الثالث).</p>
+              <p>الحل: افتح الموقع في <b>تبويب جديد</b> وسجّل الدخول هناك.</p>
+              <button
+                type="button"
+                onClick={() => window.open(window.location.origin, '_blank')}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-extrabold text-white hover:bg-amber-700"
+              >
+                 فتح الموقع في تبويب جديد
+              </button>
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading}
