@@ -45,6 +45,12 @@ export function setSessionCookie(token: string) {
 }
 
 export async function getSessionUser() {
+  // TEMPORARY preview bypass: ADMIN_BYPASS_AUTH=1 → act as the first admin user
+  // without a session cookie. Remove/flip the env var to restore protection.
+  if (process.env.ADMIN_BYPASS_AUTH === '1') {
+    const [admin] = await prisma.user.findMany({ where: { role: 'admin', isActive: true }, take: 1 });
+    if (admin) return admin;
+  }
   const token = cookies().get(COOKIE)?.value;
   if (!token) return null;
   const uid = verifySessionToken(token);

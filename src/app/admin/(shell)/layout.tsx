@@ -40,6 +40,11 @@ export default async function AdminShellLayout({ children }: { children: React.R
 
       {/* Main */}
       <div className="mr-60 flex min-h-screen flex-1 flex-col">
+        {process.env.ADMIN_BYPASS_AUTH === '1' && (
+          <div className="bg-amber-400 px-6 py-2 text-center text-xs font-extrabold text-amber-950">
+            ⚠️ وضع المعاينة: لوحة التحكم مفتوحة دون تسجيل دخول (مؤقت) — ستُعاد الحماية لاحقاً
+          </div>
+        )}
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/90 px-6 py-3 backdrop-blur">
           <div className="text-xs font-semibold text-slate-400">أهلاً، {user.name} 👋</div>
           <a
