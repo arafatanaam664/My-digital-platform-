@@ -45,7 +45,7 @@ export default function ImageUploader({ value, onChange }: { value: string; onCh
           onClick={() => inputRef.current?.click()}
           className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-xs font-extrabold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
         >
-          {busy ? 'جارٍ الرفع…' : '⬆ رفع صورة إلى R2'}
+          {busy ? 'جارٍ الرفع…' : '⬆️ رفع صورة من جهازك'}
         </button>
         {value ? (
           <a

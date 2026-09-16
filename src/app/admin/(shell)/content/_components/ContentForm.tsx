@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { createContent, updateContent } from '@/actions/content';
 import { slugify } from '@/lib/utils';
 import Markdown from '@/components/Markdown';
@@ -63,7 +63,46 @@ export default function ContentForm({
   const isEdit = !!initial.id;
   const [sectionId, setSectionId] = useState(initial.sectionId || sections[0]?.id || 0);
   const [featuredImage, setFeaturedImage] = useState(initial.featuredImage || '');
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const bodyImgRef = useRef<HTMLInputElement>(null);
+  const [bodyImgBusy, setBodyImgBusy] = useState(false);
+  const [bodyImgError, setBodyImgError] = useState('');
   const subsections = useMemo(() => sections.find((s) => s.id === sectionId)?.subsections ?? [], [sections, sectionId]);
+
+  async function insertBodyImage(files: FileList | null) {
+    const f = files?.[0];
+    if (!f) return;
+    if (f.size > 8 * 1024 * 1024) {
+      setBodyImgError('حجم الصورة يتجاوز 8MB');
+      return;
+    }
+    setBodyImgBusy(true);
+    setBodyImgError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok || !j.url) throw new Error(j.error || `فشل الرفع (${res.status})`);
+      const ta = bodyRef.current;
+      const md = `\n![صورة](${j.url})\n`;
+      if (!ta) {
+        window.alert('أدخل النص أولاً ثم أعد رفع الصورة');
+        return;
+      }
+      const start = ta.selectionStart ?? ta.value.length;
+      const end = ta.selectionEnd ?? start;
+      ta.value = ta.value.slice(0, start) + md + ta.value.slice(end);
+      const pos = start + md.length;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    } catch (e) {
+      setBodyImgError(e instanceof Error ? e.message : 'فشل الرفع');
+    } finally {
+      setBodyImgBusy(false);
+      if (bodyImgRef.current) bodyImgRef.current.value = '';
+    }
+  }
 
   return (
     <form
@@ -146,10 +185,27 @@ export default function ContentForm({
                 </label>
               )}
 
-              <label className="block">
-                <span className={labelCls}>المحتوى (يدعم Markdown — عناوين، جداول، قوائم، روابط داخلية مثل /tools/hijri-gregorian)</span>
-                <textarea name="body" defaultValue={initial.body} rows={16} dir="auto" className={inputCls + ' font-mono text-xs leading-6'} />
-              </label>
+              <div>
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                  <span className={labelCls + ' mb-0'}>المحتوى (يدعم Markdown — عناوين، جداول، قوائم، صور، وروابط داخلية مثل /tools/hijri-gregorian)</span>
+                  <div className="flex items-center gap-2">
+                    {bodyImgError && <span className="text-[11px] font-bold text-rose-600">{bodyImgError}</span>}
+                    <input ref={bodyImgRef} type="file" accept="image/*" className="hidden" onChange={(e) => insertBodyImage(e.target.files)} />
+                    <button
+                      type="button"
+                      disabled={bodyImgBusy}
+                      onClick={() => bodyImgRef.current?.click()}
+                      className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-[11px] font-extrabold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                    >
+                      {bodyImgBusy ? 'جارٍ الرفع…' : '⬆️ إدراج صورة من جهازك'}
+                    </button>
+                  </div>
+                </div>
+                <textarea ref={bodyRef} name="body" defaultValue={initial.body} rows={16} dir="auto" className={inputCls + ' font-mono text-xs leading-6'} />
+                <p className="mt-1 text-[10px] font-semibold text-slate-400">
+                  الزر يرفع الصورة ثم يدرج كودها <span dir="ltr">![صورة](رابط)</span> عند موضع المؤشر داخل النص
+                </p>
+              </div>
               <BodyPreview body={initial.body} />
             </div>
           </div>

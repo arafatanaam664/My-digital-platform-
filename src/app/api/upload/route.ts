@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { requireUser } from '@/lib/auth';
 import { slugify } from '@/lib/utils';
+import path from 'path';
+import fs from 'fs';
 
 export const runtime = 'nodejs';
 
@@ -38,14 +40,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   }
 
-  const cfg = r2Config();
-  if (!cfg) {
-    return NextResponse.json(
-      { error: 'تخزين R2 غير مُعد — أضف متغيرات البيئة R2_* ثم أعد النشر' },
-      { status: 503 }
-    );
-  }
-
   const form = await req.formData().catch(() => null);
   const file = form?.get('file');
   if (!(file instanceof File)) {
@@ -64,14 +58,37 @@ export async function POST(req: NextRequest) {
   const base = slugify(file.name.replace(/\.[^.]+$/, '')) || 'image';
   const key = `content/${ym}/${Date.now()}-${base}.${EXT[file.type]}`;
 
-  try {
-    await cfg.client.send(
-      new PutObjectCommand({ Bucket: cfg.bucket, Key: key, Body: body, ContentType: file.type, CacheControl: 'public, max-age=31536000, immutable' })
-    );
-  } catch (e) {
-    console.error('R2 upload failed:', e);
-    return NextResponse.json({ error: 'فشل الرفع إلى R2 — راجع مفاتيح API' }, { status: 500 });
+  // 1) Production: Cloudflare R2 (zero egress fees)
+  const cfg = r2Config();
+  if (cfg) {
+    try {
+      await cfg.client.send(
+        new PutObjectCommand({
+          Bucket: cfg.bucket,
+          Key: key,
+          Body: body,
+          ContentType: file.type,
+          CacheControl: 'public, max-age=31536000, immutable',
+        })
+      );
+      return NextResponse.json({ url: `${cfg.baseUrl}/${key}` });
+    } catch (e) {
+      console.error('R2 upload failed:', e);
+      return NextResponse.json({ error: 'فشل الرفع إلى R2 — راجع مفاتيح API' }, { status: 500 });
+    }
   }
 
-  return NextResponse.json({ url: `${cfg.baseUrl}/${key}` });
+  // 2) Dev / preview fallback: local disk, served by /api/uploads/[...key]
+  try {
+    const dest = path.join(process.cwd(), 'uploads', key);
+    await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+    await fs.promises.writeFile(dest, body);
+    return NextResponse.json({ url: `/api/uploads/${key}`, storage: 'local' });
+  } catch (e) {
+    console.error('Local upload failed:', e);
+    return NextResponse.json(
+      { error: 'تعذر حفظ الصورة محلياً — في الإنتاج فعّل متغيرات R2_*' },
+      { status: 500 }
+    );
+  }
 }

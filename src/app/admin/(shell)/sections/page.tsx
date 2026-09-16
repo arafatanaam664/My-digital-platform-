@@ -159,8 +159,11 @@ export default async function SectionsPage() {
                           <ConfirmDelete action={deleteSubsection.bind(null, sub.id)} confirmText={`حذف «${sub.name}»؟ (يُرفض إن كان يحتوي محتوى)`} />
                         </div>
                       </div>
-                      <div className="lg:col-span-6 -mt-1">
-                        <input type="hidden" name="description" defaultValue={sub.description || ''} />
+                      <div className="lg:col-span-6">
+                        <label className="block">
+                          <span className={labelCls}>وصف القسم الفرعي (يظهر أعلى صفحة القسم الفرعي وفي صفحة القسم)</span>
+                          <input name="description" defaultValue={sub.description || ''} className={inputCls} placeholder="مثال: أدوات فورية للتحويل بين التقويمين وحساب المواعيد" />
+                        </label>
                       </div>
                     </form>
                   ))}
@@ -195,8 +198,11 @@ export default async function SectionsPage() {
                       </label>
                       <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700">إضافة</button>
                     </div>
-                    <div className="lg:col-span-6 -mt-1">
-                      <input type="hidden" name="description" defaultValue="" />
+                    <div className="lg:col-span-6">
+                      <label className="block">
+                        <span className={labelCls}>وصف القسم الفرعي (اختياري)</span>
+                        <input name="description" defaultValue="" className={inputCls} placeholder="مثال: مقالات عن التقويم الهجري والميلادي" />
+                      </label>
                     </div>
                   </form>
                 </div>
