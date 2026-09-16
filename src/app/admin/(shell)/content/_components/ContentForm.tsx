@@ -82,10 +82,11 @@ export default function ContentForm({
       const fd = new FormData();
       fd.append('file', f);
       const res = await fetch('/api/upload', { method: 'POST', body: fd });
-      const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string; alt?: string };
       if (!res.ok || !j.url) throw new Error(j.error || `فشل الرفع (${res.status})`);
       const ta = bodyRef.current;
-      const md = `\n![صورة](${j.url})\n`;
+      const alt = (j.alt || 'صورة').replace(/["\\]/g, '');
+      const md = `\n![${alt}](${j.url})\n`;
       if (!ta) {
         window.alert('أدخل النص أولاً ثم أعد رفع الصورة');
         return;

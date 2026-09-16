@@ -18,6 +18,26 @@ const components = {
       </a>
     );
   },
+  // Google image best practices: intrinsic width/height (prevents CLS),
+  // lazy loading + async decode, rounded presentation.
+  img: ({ src, alt, node: _node, ...props }: React.ImgHTMLAttributes<HTMLImageElement> & { node?: unknown }) => {
+    const m = typeof src === 'string' ? src.match(/(\d{2,5})x(\d{2,5})\.(?:webp|avif|jpe?g|png)/i) : null;
+    const w = m ? parseInt(m[1], 10) : undefined;
+    const h = m ? parseInt(m[2], 10) : undefined;
+    return (
+      <img
+        src={src}
+        alt={alt || ''}
+        loading="lazy"
+        decoding="async"
+        width={w}
+        height={h}
+        className="my-6 w-full min-w-0 rounded-xl border border-slate-200 shadow-sm"
+        style={w && h ? { aspectRatio: `${w} / ${h}`, height: 'auto' } : undefined}
+        {...props}
+      />
+    );
+  },
 };
 
 export default function Markdown({ children }: { children: string }) {
