@@ -80,7 +80,25 @@ export default async function SectionPage({ params }: Props) {
           <section key={sub.id}>
             <SectionTitle href={`/s/${section.slug}/${sub.slug}`}>{sub.name}</SectionTitle>
             {sub.description && <p className="-mt-3 mb-5 max-w-2xl text-xs leading-6 text-slate-400">{sub.description}</p>}
-            {(sub.items?.length ?? 0) > 0 ? (
+            {sub.slug === 'countdowns' ? (
+              <Link
+                href="/countdowns"
+                className="card card-hover flex flex-col gap-2 p-5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="font-extrabold text-slate-900">
+                    ⏳ عدّادات تنازلية مباشرة على الأعياد والمناسبات — 12 دولة
+                  </div>
+                  <div className="mt-1 text-xs leading-6 text-slate-500">
+                    كم باقي على عيد الفطر وعيد الأضحى واليوم الوطني والأعياد القومية حسب دولتك،
+                    بالتاريخين الميلادي والهجري.
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm">
+                  استعرض العدّادات ←
+                </span>
+              </Link>
+            ) : (sub.items?.length ?? 0) > 0 ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {(sub.items ?? []).map((it) => (
                   <ItemCard key={it.id} item={it} />

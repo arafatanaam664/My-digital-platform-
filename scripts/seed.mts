@@ -327,6 +327,26 @@ export async function runSeed(orm: SeedOrm) {
     console.log('• calendar section already exists, skipped seed content');
   }
 
+  // ---------- subsection: عدّادات المناسبات حول العالم (idempotent) ----------
+  let cdSub = await orm.subsection.findUnique({ where: { slug: 'countdowns' } });
+  if (!cdSub) {
+    await orm.subsection.create({
+      data: {
+        sectionId: cal.id,
+        slug: 'countdowns',
+        name: 'عدّادات المناسبات حول العالم',
+        type: 'articles',
+        order: 4,
+        isActive: true,
+        description:
+          'عدّادات تنازلية مباشرة على الأعياد والمناسبات الرسمية حسب الدولة: كم باقي على عيد الفطر وعيد الأضحى واليوم الوطني والأعياد القومية في 12 دولة — بالتاريخين الميلادي والهجري.',
+      },
+    });
+    console.log('✔ subsection: عدّادات المناسبات حول العالم');
+  } else {
+    console.log('• subsection countdowns already exists, skipped');
+  }
+
   // ---------- demo second section (inactive, shows the expansion mechanism) ----------
   const tech = await orm.section.findUnique({ where: { slug: 'tech' } });
   if (!tech) {

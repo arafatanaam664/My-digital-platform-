@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { prisma } from '@/lib/db';
 import { itemUrl } from '@/lib/utils';
+import { COUNTRIES } from '@/data/countdown';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'monthly',
       priority: 0.6,
     });
+  }
+
+  // قسم عدّادات المناسبات (countdowns) — بيانات ثابتة، تتحدث التواريخ يومياً
+  entries.push({ url: `${base}/countdowns`, lastModified: now, changeFrequency: 'daily', priority: 0.9 });
+  for (const c of COUNTRIES) {
+    entries.push({ url: `${base}/countdowns/${c.slug}`, lastModified: now, changeFrequency: 'daily', priority: 0.8 });
+    for (const h of c.holidays) {
+      entries.push({ url: `${base}/countdowns/${c.slug}/${h.slug}`, lastModified: now, changeFrequency: 'daily', priority: 0.7 });
+    }
   }
 
   return entries;
