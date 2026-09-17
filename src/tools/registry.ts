@@ -8,6 +8,7 @@ import AgeCalculator from './AgeCalculator';
 import WorkingDays from './WorkingDays';
 import MonthCalendar from './MonthCalendar';
 import DayOfWeek from './DayOfWeek';
+import NameDecoration from './NameDecoration';
 
 export interface ToolDef {
   name: string;
@@ -49,9 +50,15 @@ export const TOOL_REGISTRY: Record<string, ToolDef> = {
   },
   'day-of-week': {
     name: 'يوم الأسبوعو لأي تاريخ',
-    icon: '',
+    icon: '📆',
     description: 'اعرف ما هو يوم الأسبوعو لأي تاريخ مضى أو قادم',
     Component: DayOfWeek,
+  },
+  'name-decoration': {
+    name: 'مُزيّن الأسماء (أحرف يونيكود)',
+    icon: '🎀',
+    description: 'حوّل اسمك إلى صيغ زخرفية عريضة ومائلة وخطية ورمزية',
+    Component: NameDecoration,
   },
 };
 

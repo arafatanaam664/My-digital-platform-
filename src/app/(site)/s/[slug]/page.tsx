@@ -6,6 +6,7 @@ import TrackData from '@/components/TrackData';
 import ItemCard from '@/components/ItemCard';
 import Breadcrumbs from '@/components/Breadcrumbs';
 import SectionTitle from '@/components/SectionTitle';
+import { DEDICATED_SUB_PAGES } from '@/lib/dedicatedSubPages';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,7 +68,7 @@ export default async function SectionPage({ params }: Props) {
             {(section.subsections ?? []).map((s2) => (
               <Link
                 key={s2.id}
-                href={`/s/${section.slug}/${s2.slug}`}
+                href={DEDICATED_SUB_PAGES[s2.slug]?.href ?? `/s/${section.slug}/${s2.slug}`}
                 className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700"
               >
                 {s2.name}
@@ -78,7 +79,7 @@ export default async function SectionPage({ params }: Props) {
 
         {(section.subsections ?? []).map((sub) => (
           <section key={sub.id}>
-            <SectionTitle href={`/s/${section.slug}/${sub.slug}`}>{sub.name}</SectionTitle>
+            <SectionTitle href={DEDICATED_SUB_PAGES[sub.slug]?.href ?? `/s/${section.slug}/${sub.slug}`}>{sub.name}</SectionTitle>
             {sub.description && <p className="-mt-3 mb-5 max-w-2xl text-xs leading-6 text-slate-400">{sub.description}</p>}
             {sub.slug === 'countdowns' ? (
               <Link
@@ -96,6 +97,19 @@ export default async function SectionPage({ params }: Props) {
                 </div>
                 <span className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm">
                   استعرض العدّادات ←
+                </span>
+              </Link>
+            ) : DEDICATED_SUB_PAGES[sub.slug] ? (
+              <Link
+                href={DEDICATED_SUB_PAGES[sub.slug].href}
+                className="card card-hover flex flex-col gap-2 p-5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="font-extrabold text-slate-900">{DEDICATED_SUB_PAGES[sub.slug].title}</div>
+                  <div className="mt-1 text-xs leading-6 text-slate-500">{DEDICATED_SUB_PAGES[sub.slug].desc}</div>
+                </div>
+                <span className="shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm">
+                  افتح الصفحة ←
                 </span>
               </Link>
             ) : (sub.items?.length ?? 0) > 0 ? (

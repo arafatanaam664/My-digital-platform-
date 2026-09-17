@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@/lib/db';
 import TrackData from '@/components/TrackData';
 import ItemCard from '@/components/ItemCard';
@@ -9,6 +9,7 @@ import SectionTitle from '@/components/SectionTitle';
 import { fmtNum, itemUrl } from '@/lib/utils';
 import { COUNTRIES } from '@/data/countdown';
 import { resolveHoliday, daysBetween, formatDateShort } from '@/lib/countdown';
+import { DEDICATED_SUB_PAGES } from '@/lib/dedicatedSubPages';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,10 @@ export default async function SubsectionPage({ params }: Props) {
     },
   });
   if (!sub || !sub.section || !sub.isActive || !sub.section.isActive) notFound();
+
+  // الأقسام الفرعية التي لها صفحات SEO كاملة — إعادة توجيه مباشرة إليها
+  const dedicated = DEDICATED_SUB_PAGES[params.sub];
+  if (dedicated) redirect(dedicated.href);
 
   const section = sub.section;
   const items = await prisma.contentItem.findMany({
