@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { getSettings } from '@/lib/settings';
 import TrackData from '@/components/TrackData';
 import Breadcrumbs from '@/components/Breadcrumbs';
+import SectionTitle from '@/components/SectionTitle';
 import Markdown from '@/components/Markdown';
 import ToolHost from '@/components/ToolHost';
 import { fmtDate, fmtNum, itemUrl, TYPE_LABEL, cn } from '@/lib/utils';
@@ -34,7 +35,7 @@ function RelatedCard({ it }: { it: ContentItem }) {
       href={itemUrl(it)}
       className="group flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-indigo-300"
     >
-      <span className="truncate text-sm font-bold text-slate-700 group-hover:text-indigo-700">{it.title}</span>
+      <span className="truncate text-sm font-bold text-slate-700 transition group-hover:text-indigo-700">{it.title}</span>
       <span className="shrink-0 text-[11px] text-slate-400">👁 {fmtNum(it.views)}</span>
     </Link>
   );
@@ -78,7 +79,8 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
   return (
     <div>
       <TrackData path={path} />
-      <div className="mx-auto max-w-4xl px-4 py-10">
+
+      <div className="container-site max-w-4xl py-10">
         <Breadcrumbs
           items={[
             { label: section.name, href: `/s/${section.slug}` },
@@ -88,10 +90,10 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
         />
 
         <header className="mt-5">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span
               className={cn(
-                'rounded-md border px-2.5 py-1 text-[11px] font-bold',
+                'badge',
                 item.type === 'tool'
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                   : item.type === 'guide'
@@ -104,9 +106,24 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
             <span className="text-xs text-slate-400">{fmtDate(item.publishedAt)}</span>
             <span className="text-xs text-slate-400">👁 {fmtNum(item.views)} زيارة</span>
           </div>
-          <h1 className="mt-3 text-2xl font-extrabold leading-snug text-slate-900 sm:text-3xl">{item.title}</h1>
-          {item.excerpt && <p className="mt-3 text-sm leading-7 text-slate-500">{item.excerpt}</p>}
+          <h1 className="mt-4 text-2xl font-extrabold leading-[1.35] tracking-tight text-slate-900 sm:text-3xl">
+            {item.title}
+          </h1>
+          {item.excerpt && <p className="mt-3 text-sm leading-8 text-slate-500 sm:text-base">{item.excerpt}</p>}
         </header>
+
+        {item.featuredImage && (
+          <div className="mt-7 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.featuredImage}
+              alt={item.title}
+              loading="eager"
+              decoding="async"
+              className="max-h-[480px] w-full object-cover"
+            />
+          </div>
+        )}
 
         <div className="mt-8">
           {item.type === 'tool' && item.toolKey && (
@@ -118,12 +135,12 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
         </div>
 
         {tags.length > 0 && (
-          <div className="mt-8 flex flex-wrap gap-2 border-t border-slate-100 pt-6">
+          <div className="mt-10 flex flex-wrap gap-2 border-t border-slate-200/70 pt-6">
             {tags.map((t) => (
               <Link
                 key={t}
                 href={`/search?q=${encodeURIComponent(t)}`}
-                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-indigo-100 hover:text-indigo-700"
+                className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-indigo-100 hover:text-indigo-700"
               >
                 # {t}
               </Link>
@@ -131,30 +148,30 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
           </div>
         )}
 
-        {prevNext.length > 0 && (
-          <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-6 text-xs font-bold">
-            {prevNext.length >= 2 ? (
-              <Link href={itemUrl(prevNext[0])} className="rounded-xl bg-slate-50 px-4 py-2.5 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700">
-                → {prevNext[0].title}
-              </Link>
-            ) : (
-              <span />
-            )}
-            {prevNext.length >= 2 && (
-              <Link href={itemUrl(prevNext[1])} className="rounded-xl bg-slate-50 px-4 py-2.5 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700">
-                {prevNext[1].title} ←
-              </Link>
-            )}
+        {prevNext.length >= 2 && (
+          <div className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200/70 pt-6 text-xs font-bold">
+            <Link
+              href={itemUrl(prevNext[0])}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700"
+            >
+              → {prevNext[0].title}
+            </Link>
+            <Link
+              href={itemUrl(prevNext[1])}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700"
+            >
+              {prevNext[1].title} ←
+            </Link>
           </div>
         )}
       </div>
 
-      {/* Internal linking modules */}
-      <div className="border-t border-slate-100 bg-slate-50/60">
-        <div className="mx-auto grid max-w-6xl gap-8 px-4 py-10 lg:grid-cols-3">
+      {/* وصلات داخلية */}
+      <div className="border-t border-slate-200/70 bg-slate-50/70">
+        <div className="container-site grid gap-8 py-10 lg:grid-cols-3">
           {sameSub.length > 0 && (
             <section>
-              <h2 className="mb-3 text-sm font-extrabold text-slate-900">مزيد من «{subsection.name}»</h2>
+              <SectionTitle href={`/s/${section.slug}/${subsection.slug}`}>مزيد من «{subsection.name}»</SectionTitle>
               <div className="space-y-2">
                 {sameSub.map((it) => (
                   <RelatedCard key={it.id} it={it} />
@@ -165,7 +182,7 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
 
           {otherInSection.length > 0 && (
             <section>
-              <h2 className="mb-3 text-sm font-extrabold text-slate-900">من قسم {section.name}</h2>
+              <SectionTitle href={`/s/${section.slug}`}>من قسم {section.name}</SectionTitle>
               <div className="space-y-2">
                 {otherInSection.map((it) => (
                   <RelatedCard key={it.id} it={it} />
@@ -175,9 +192,7 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
           )}
 
           <section>
-            <h2 className="mb-3 text-sm font-extrabold text-slate-900">
-              {popularByViews.length > 0 ? 'الأكثر زيارة في المنصة' : 'تصفح الأقسام'}
-            </h2>
+            <SectionTitle>{popularByViews.length > 0 ? 'الأكثر زيارة في المنصة' : 'تصفح الأقسام'}</SectionTitle>
             <div className="space-y-2">
               {popularByViews.length > 0 ? (
                 popularByViews.map((it) => <RelatedCard key={it.id} it={it} />)
@@ -186,7 +201,7 @@ export default async function ContentPage({ item, path }: { item: ContentItem; p
                   <Link
                     key={o.id}
                     href={`/s/${o.slug}`}
-                    className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm hover:border-indigo-300"
+                    className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 shadow-sm transition hover:border-indigo-300"
                   >
                     <span className="text-lg">{o.icon}</span> {o.name}
                   </Link>

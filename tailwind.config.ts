@@ -5,7 +5,7 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['"Segoe UI"', 'Tahoma', '"Noto Kufi Arabic"', 'system-ui', 'sans-serif'],
+        sans: ['"Segoe UI"', 'Tahoma', '"Noto Kufi Arabic"', '"Helvetica Neue"', 'system-ui', 'sans-serif'],
       },
     },
   },

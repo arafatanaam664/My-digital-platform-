@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import TrackData from '@/components/TrackData';
 import ItemCard from '@/components/ItemCard';
 import Breadcrumbs from '@/components/Breadcrumbs';
+import SectionTitle from '@/components/SectionTitle';
 import { fmtNum, itemUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -59,36 +60,42 @@ export default async function SubsectionPage({ params }: Props) {
   return (
     <div>
       <TrackData path={`/s/${params.slug}/${params.sub}`} />
-      <div className="border-b border-slate-200 bg-gradient-to-b from-indigo-50/70 to-white">
-        <div className="mx-auto max-w-6xl px-4 py-10">
+
+      {/* رأس القسم الفرعي */}
+      <div className="border-b border-slate-200/70 bg-gradient-to-b from-indigo-50/70 to-white">
+        <div className="container-site py-10">
           <Breadcrumbs
             items={[
               { label: section.name, href: `/s/${section.slug}` },
               { label: sub.name },
             ]}
           />
-          <h1 className="mt-4 text-2xl font-extrabold text-slate-900">
+          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
             {section.icon} {sub.name}
           </h1>
           {sub.description && <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500">{sub.description}</p>}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {(section.subsections ?? []).map((s2) => (
-              <Link
-                key={s2.id}
-                href={`/s/${section.slug}/${s2.slug}`}
-                className={
-                  'rounded-lg px-3 py-1.5 text-xs font-bold transition ' +
-                  (s2.id === sub.id ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500 shadow-sm hover:text-indigo-700')
-                }
-              >
-                {s2.name}
-              </Link>
-            ))}
-          </div>
+          {(section.subsections?.length ?? 0) > 1 && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {(section.subsections ?? []).map((s2) => (
+                <Link
+                  key={s2.id}
+                  href={`/s/${section.slug}/${s2.slug}`}
+                  className={
+                    'rounded-lg px-3 py-1.5 text-xs font-bold transition ' +
+                    (s2.id === sub.id
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-indigo-300 hover:text-indigo-700')
+                  }
+                >
+                  {s2.name}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl space-y-12 px-4 py-10">
+      <div className="container-site space-y-12 py-10">
         <section>
           {items.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -105,15 +112,15 @@ export default async function SubsectionPage({ params }: Props) {
 
         {otherSubsItems.length > 0 && (
           <section>
-            <h2 className="mb-4 text-lg font-extrabold text-slate-900">من قسم {section.name}</h2>
+            <SectionTitle>من قسم {section.name}</SectionTitle>
             <div className="grid gap-3 sm:grid-cols-2">
               {otherSubsItems.map((it) => (
                 <Link
                   key={it.id}
                   href={itemUrl(it)}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition hover:border-indigo-300"
+                  className="card card-hover flex items-center justify-between gap-3 px-4 py-3"
                 >
-                  <span className="truncate font-bold text-slate-700">{it.title}</span>
+                  <span className="truncate text-sm font-bold text-slate-700">{it.title}</span>
                   <span className="shrink-0 text-[11px] text-slate-400">👁 {fmtNum(it.views)}</span>
                 </Link>
               ))}
@@ -122,19 +129,15 @@ export default async function SubsectionPage({ params }: Props) {
         )}
 
         {otherSections.length > 0 && (
-          <section className="border-t border-slate-100 pt-8">
-            <h2 className="mb-4 text-lg font-extrabold text-slate-900">استكشف أقساماً أخرى</h2>
+          <section className="border-t border-slate-200/70 pt-10">
+            <SectionTitle>استكشف أقساماً أخرى</SectionTitle>
             <div className="grid gap-4 sm:grid-cols-3">
               {otherSections.map((o) => (
-                <Link
-                  key={o.id}
-                  href={`/s/${o.slug}`}
-                  className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300"
-                >
-                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-indigo-50 text-xl">{o.icon}</span>
-                  <div>
-                    <div className="text-sm font-extrabold text-slate-800">{o.name}</div>
-                    <div className="line-clamp-1 text-[11px] text-slate-400">{o.description || 'قريباً'}</div>
+                <Link key={o.id} href={`/s/${o.slug}`} className="card card-hover flex items-center gap-3 p-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-50 text-xl">{o.icon}</span>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-extrabold text-slate-800">{o.name}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-slate-400">{o.description || 'قريباً'}</div>
                   </div>
                 </Link>
               ))}

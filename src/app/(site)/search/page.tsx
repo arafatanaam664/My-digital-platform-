@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 import TrackData from '@/components/TrackData';
 import SearchForm from '@/components/SearchForm';
 import ItemCard from '@/components/ItemCard';
-import { itemUrl } from '@/lib/utils';
+import SectionTitle from '@/components/SectionTitle';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,23 +29,27 @@ export default async function SearchPage({ searchParams }: { searchParams: { q?:
   return (
     <div>
       <TrackData path="/search" />
-      <div className="mx-auto max-w-4xl px-4 py-12">
-        <h1 className="text-xl font-extrabold text-slate-900">بحث في المنصة</h1>
-        <SearchForm className="mt-5 max-w-xl" placeholder="اكتب كلمة البحث..." />
+      <div className="container-site max-w-5xl py-12">
+        <SectionTitle>بحث في المنصة</SectionTitle>
+        <SearchForm className="max-w-xl" placeholder="اكتب كلمة البحث..." />
+
         {q && (
           <p className="mt-6 text-sm text-slate-500">
             نتائج البحث عن: <b className="text-slate-800">«{q}»</b> — {results.length} نتيجة
           </p>
         )}
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {results.map((it) => (
             <ItemCard key={it.id} item={it} showSection />
           ))}
         </div>
+
         {q && results.length === 0 && (
-          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-8 text-center">
-            <p className="text-sm font-semibold text-slate-500">لا توجد نتائج مطابقة</p>
-            <Link href="/" className="mt-2 inline-block text-xs font-bold text-indigo-600 hover:underline">
+          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 p-10 text-center">
+            <div className="text-3xl">🔍</div>
+            <p className="mt-3 text-sm font-semibold text-slate-500">لا توجد نتائج مطابقة</p>
+            <Link href="/" className="link-soft mt-2 inline-block">
               العودة إلى الرئيسية
             </Link>
           </div>

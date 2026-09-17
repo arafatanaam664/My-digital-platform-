@@ -27,23 +27,24 @@ export default async function Footer() {
   ].filter((x) => s[x.key]);
 
   return (
-    <footer className="mt-16 border-t border-slate-200 bg-slate-50">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:grid-cols-2 lg:grid-cols-4">
+    <footer className="mt-20 bg-slate-900 text-slate-400">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:grid-cols-2 lg:grid-cols-4">
+        {/* العلامة */}
         <div>
-          <div className="flex items-center gap-2">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-600 text-lg text-white">🧭</span>
-            <span className="text-lg font-extrabold text-slate-900">{s.siteName}</span>
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-600 text-xl text-white">🧭</span>
+            <span className="text-lg font-extrabold text-white">{s.siteName}</span>
           </div>
-          <p className="mt-3 text-sm leading-7 text-slate-500">{s.description}</p>
+          <p className="mt-4 text-sm leading-7 text-slate-400">{s.description}</p>
           {socials.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="mt-5 flex flex-wrap gap-2">
               {socials.map((x) => (
                 <a
                   key={x.key}
                   href={s[x.key]}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-700"
+                  className="rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-indigo-500 hover:text-white"
                 >
                   {x.icon} {x.label}
                 </a>
@@ -52,48 +53,54 @@ export default async function Footer() {
           )}
         </div>
 
+        {/* الأقسام */}
         {sections.slice(0, 3).map((sec) => (
           <div key={sec.id}>
-            <Link href={`/s/${sec.slug}`} className="text-sm font-extrabold text-slate-900 hover:text-indigo-700">
+            <Link
+              href={`/s/${sec.slug}`}
+              className="text-sm font-extrabold text-white transition hover:text-indigo-300"
+            >
               {sec.icon} {sec.name}
             </Link>
-            <ul className="mt-3 space-y-2">
+            <ul className="mt-4 space-y-2.5">
               {(sec.subsections ?? []).map((sub) => (
                 <li key={sub.id}>
-                  <Link href={`/s/${sec.slug}/${sub.slug}`} className="text-sm text-slate-500 hover:text-indigo-700">
+                  <Link href={`/s/${sec.slug}/${sub.slug}`} className="text-sm text-slate-400 transition hover:text-indigo-300">
                     {sub.name}
                   </Link>
                 </li>
               ))}
-              {(sec.subsections?.length ?? 0) === 0 && <li className="text-sm text-slate-400">قريباً</li>}
+              {(sec.subsections?.length ?? 0) === 0 && <li className="text-sm text-slate-600">قريباً</li>}
             </ul>
           </div>
         ))}
 
+        {/* أحدث المحتوى */}
         <div>
-          <div className="text-sm font-extrabold text-slate-900">أحدث المحتوى</div>
-          <ul className="mt-3 space-y-2">
+          <div className="text-sm font-extrabold text-white">أحدث المحتوى</div>
+          <ul className="mt-4 space-y-2.5">
             {latest.map((it) => (
               <li key={it.id}>
-                <Link href={itemUrl(it)} className="line-clamp-2 text-sm text-slate-500 hover:text-indigo-700">
+                <Link href={itemUrl(it)} className="line-clamp-2 text-sm text-slate-400 transition hover:text-indigo-300">
                   {it.title}
                 </Link>
               </li>
             ))}
-            {latest.length === 0 && <li className="text-sm text-slate-400">لا يوجد محتوى بعد</li>}
+            {latest.length === 0 && <li className="text-sm text-slate-600">لا يوجد محتوى بعد</li>}
           </ul>
         </div>
       </div>
 
-      <div className="border-t border-slate-200/70">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-slate-400">
+      <div className="border-t border-slate-800">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-slate-500">
           <span>
             © {new Date().getFullYear()} {s.siteName} — {s.footerText}
           </span>
-          <span>
-            المحتوى:{' '}
-            {latest.length > 0 && <span className="text-slate-500">{TYPE_LABEL[latest[0].type]}: {fmtDate(latest[0].publishedAt)}</span>}
-          </span>
+          {latest[0] && (
+            <span>
+              آخر تحديث: {TYPE_LABEL[latest[0].type]} · {fmtDate(latest[0].publishedAt)}
+            </span>
+          )}
         </div>
       </div>
     </footer>

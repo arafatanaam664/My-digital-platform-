@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import TrackData from '@/components/TrackData';
 import ItemCard from '@/components/ItemCard';
 import Breadcrumbs from '@/components/Breadcrumbs';
-import { itemUrl } from '@/lib/utils';
+import SectionTitle from '@/components/SectionTitle';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,28 +43,43 @@ export default async function SectionPage({ params }: Props) {
   return (
     <div>
       <TrackData path={path} />
-      <div className="border-b border-slate-200 bg-gradient-to-b from-indigo-50/70 to-white">
-        <div className="mx-auto max-w-6xl px-4 py-10">
+
+      {/* رأس القسم */}
+      <div className="border-b border-slate-200/70 bg-gradient-to-b from-indigo-50/70 to-white">
+        <div className="container-site py-10">
           <Breadcrumbs items={[{ label: section.name, href: path }]} />
-          <div className="mt-4 flex items-center gap-4">
-            <span className="grid h-16 w-16 place-items-center rounded-2xl bg-white text-3xl shadow-sm">{section.icon}</span>
+          <div className="mt-5 flex items-center gap-4">
+            <span className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-3xl shadow-sm">
+              {section.icon}
+            </span>
             <div>
-              <h1 className="text-2xl font-extrabold text-slate-900">{section.name}</h1>
-              {section.description && <p className="mt-1 max-w-2xl text-sm leading-7 text-slate-500">{section.description}</p>}
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">{section.name}</h1>
+              {section.description && <p className="mt-1.5 max-w-2xl text-sm leading-7 text-slate-500">{section.description}</p>}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl space-y-12 px-4 py-10">
+      <div className="container-site space-y-12 py-10">
+        {/* شارات الأقسام الفرعية */}
+        {(section.subsections?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {(section.subsections ?? []).map((s2) => (
+              <Link
+                key={s2.id}
+                href={`/s/${section.slug}/${s2.slug}`}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-700"
+              >
+                {s2.name}
+              </Link>
+            ))}
+          </div>
+        )}
+
         {(section.subsections ?? []).map((sub) => (
           <section key={sub.id}>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-extrabold text-slate-900">{sub.name}</h2>
-              <Link href={`/s/${section.slug}/${sub.slug}`} className="text-xs font-bold text-indigo-600 hover:underline">
-                عرض الكل ←
-              </Link>
-            </div>
+            <SectionTitle href={`/s/${section.slug}/${sub.slug}`}>{sub.name}</SectionTitle>
+            {sub.description && <p className="-mt-3 mb-5 max-w-2xl text-xs leading-6 text-slate-400">{sub.description}</p>}
             {(sub.items?.length ?? 0) > 0 ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {(sub.items ?? []).map((it) => (
@@ -84,19 +99,17 @@ export default async function SectionPage({ params }: Props) {
         )}
 
         {otherSections.length > 0 && (
-          <section className="border-t border-slate-100 pt-8">
-            <h2 className="mb-4 text-lg font-extrabold text-slate-900">استكشف أقساماً أخرى</h2>
+          <section className="border-t border-slate-200/70 pt-10">
+            <SectionTitle>استكشف أقساماً أخرى</SectionTitle>
             <div className="grid gap-4 sm:grid-cols-3">
               {otherSections.map((o) => (
-                <Link
-                  key={o.id}
-                  href={`/s/${o.slug}`}
-                  className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-300"
-                >
-                  <span className="grid h-11 w-11 place-items-center rounded-xl bg-indigo-50 text-xl">{o.icon}</span>
-                  <div>
-                    <div className="text-sm font-extrabold text-slate-800">{o.name}</div>
-                    <div className="text-[11px] text-slate-400">{o.description ? o.description.slice(0, 50) + '…' : 'قادم'}</div>
+                <Link key={o.id} href={`/s/${o.slug}`} className="card card-hover flex items-center gap-3 p-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-50 text-xl">{o.icon}</span>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-extrabold text-slate-800">{o.name}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-slate-400">
+                      {o.description ? o.description.slice(0, 60) + (o.description.length > 60 ? '…' : '') : 'قادم'}
+                    </div>
                   </div>
                 </Link>
               ))}

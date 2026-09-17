@@ -3,7 +3,15 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-export default function SearchForm({ placeholder = 'ابحث في المنصة...', className }: { placeholder?: string; className?: string }) {
+export default function SearchForm({
+  placeholder = 'ابحث في المنصة...',
+  className,
+  onNavigate,
+}: {
+  placeholder?: string;
+  className?: string;
+  onNavigate?: () => void;
+}) {
   const [q, setQ] = useState('');
   const router = useRouter();
 
@@ -14,6 +22,7 @@ export default function SearchForm({ placeholder = 'ابحث في المنصة..
         e.preventDefault();
         const query = q.trim();
         router.push(query ? `/search?q=${encodeURIComponent(query)}` : '/');
+        onNavigate?.();
       }}
       role="search"
     >
